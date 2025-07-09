@@ -74,6 +74,7 @@ sysinfo.txt
 *.dll
 *.so
 *.dylib
+*.env
 
 # Crashlytics generated file
 crashlytics-build.properties

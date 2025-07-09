@@ -1,81 +1,83 @@
+import pandas as pd
 import os
-import re
-import unicodedata
+from dotenv import load_dotenv
 
-# === CONFIGURATION ===
-PROJECT_PATH = r"C:\Users\swnar\projects\SmartlockGUI" #path to root of project, change if needed
-LOG_PATH = os.path.join(PROJECT_PATH, "Logs", "Editor.log")  #to log, change if needed
-ASSETS_PATH = os.path.join(PROJECT_PATH, "Assets")
-SAFE_EXTENSIONS = {'.cs', '.meta', '.asmdef', '.cginc', '.hlsl', '.shader', '.uxml', '.uss'}
-DRY_RUN = True  # Set to False to actually delete files
+#DEFINE GLOBAL VARIABLES==========================================================
+DRY_RUN = False
+PRINT_USED_ASSETS = False
+PRINT_ALL_ASSETS = False
+PRINT_UNUSED_ASSETS = False
+PRINT_DELETED_ASSETS = False
+SAFE_EXTENSIONS = {".asmdef", ".dll", ".csproj", ".json", ".shader", ".cginc", ".hlsl"}
+SAFE_FILES = {"manifest.json", "package.json"}
+SAFE_DIRS = {"ProjectSettings", "Packages", ".git", "Scenes"}
+#Buildreport and project paths are defined in .env
+#==============================================================================
 
-def clean_line(line):
-    return unicodedata.normalize('NFKC', line).strip()
+load_dotenv()
+BUILDREPORTCSV_PATH = os.getenv("BUILDREPORTCSV_PATH")
+PROJECT_PATH = os.getenv("PROJECT_PATH")
+BUILDREPORTCSV_PATH = BUILDREPORTCSV_PATH.replace("\\", "/")
+PROJECT_PATH = PROJECT_PATH.replace("\\", "/")
 
-print(" === STEP 1: Parsing Editor.log for used asset paths ===")
-
-used_assets = set()
-asset_line_re = re.compile(r'(Assets\/.+?\.\w{2,5})')
-
-with open(LOG_PATH, 'r', encoding='utf-8') as log_file:
-    for i, line in enumerate(log_file):
-        if 'Assets/' in line:
-            print(f"[{i}] {repr(line)}")  # shows invisible characters
-
-with open(LOG_PATH, 'r', encoding='utf-8') as log_file:
-    for raw_line in log_file:
-        cleaned_line = clean_line(raw_line)
-        match = asset_line_re.search(cleaned_line)
-        if match:
-            relative_path = match.group(1).strip()
-            norm_path = os.path.normpath(os.path.join(PROJECT_PATH, relative_path))
-            used_assets.add(norm_path)
-
-print()
-print("printing parsed used asset paths")
-for i in used_assets:
-    print(i)
-    
-print()
-print()
-print("=== STEP 2: Get all assets ===") 
-
-all_asset_files = []
-for root, _, files in os.walk(ASSETS_PATH):
-    for f in files:
-        full_path = os.path.normpath(os.path.join(root, f))
-        all_asset_files.append(full_path)
-
-# === STEP 3: Compare and find unused ===
-unused_files = []
-for fpath in all_asset_files:
-    ext = os.path.splitext(fpath)[1].lower()
-    if ext in SAFE_EXTENSIONS:
-        continue  # Never delete these
-    if fpath not in used_assets:
-        unused_files.append(fpath)
-
-# === STEP 4: Delete or dry run ===
-if DRY_RUN:
-    print()
-    print()
-    print("\n-- DRY RUN -- Files that would be deleted:")
-    for f in unused_files:
-        print(f)
+if not BUILDREPORTCSV_PATH or not PROJECT_PATH:
+    print ("===ERROR===\n"
+        "Path(s) not defined in .env.")
 else:
-    print("\n-- DELETING UNUSED FILES --")
-    for f in unused_files:
-        try:
-            os.remove(f)
-            print(f"Deleted: {f}")
-        except Exception as e:
-            print(f"Error deleting {f}: {e}")
+    print("== STEP1: Parsing Buildreport for Used Assets ===")
+
+df = pd.read_csv(BUILDREPORTCSV_PATH, usecols=[0])
+used_assets = set(df.iloc[:, 0])
+used_assets = {PROJECT_PATH + "/" + path for path in used_assets}
+print(f"Found {len(used_assets)} used assets.")
+
+if PRINT_USED_ASSETS:
+    print("Used Assets:")
+    for path in used_assets:
+        print (path)
+else:
+    # print("PRINT_USED_ASSETS set to false")
+    print("Parsed all used assets found in buildreport")
 
 print()
+print("=== STEP2: Finding Assets to Delete ===")
+
+all_assets = set()
+total_asset_num = 0
+for dirpath, dirnames, filenames in os.walk(PROJECT_PATH):
+    for filename in filenames:
+        total_asset_num += 1
+        filepath = os.path.join(dirpath, filename).replace("\\", "/")
+        if any(filename.endswith(ext) for ext in SAFE_EXTENSIONS):
+            continue
+        elif any(part in SAFE_DIRS for part in filepath.replace("\\", "/").split("/")):
+            continue
+        elif filename in SAFE_FILES:
+            continue
+        else:
+            all_assets.add(filepath)
+print(f"Found {total_asset_num} assets")
+print(f"Found {len(all_assets)} total unprotected assets.")
+
+if PRINT_ALL_ASSETS:
+    print("Used Assets:")
+    for path in all_assets:
+        print (path)
+else:
+    print("Parsed all used assets found in buildreport.")
+
+unused_assets = set()
+for path in all_assets:
+    if path not in used_assets:
+        unused_assets.add(path)
+
 print()
-print("===================SUMMARY===================")
-print(f"Found {len(all_asset_files)} total files in Assets")
-print(f"Found {len(used_assets)} used asset paths.")
-print(f"{len(unused_files)} files are not in build log and are eligible for deletion.")
-print(f"{len(all_asset_files) - len(used_assets)}")
-print("\nDone.")
+print("=== STEP3: Removing Bloat ===")
+if DRY_RUN:
+    print(f"DRY RUN: Found {len(unused_assets)} to be deleted.")
+else:
+    for file in unused_assets:
+        os.remove(file)
+        if PRINT_DELETED_ASSETS:
+            print(f"Deleted: {file}")
+    print(f"WET RUN: removed {len(unused_assets)} files.")
