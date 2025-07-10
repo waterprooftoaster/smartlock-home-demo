@@ -10,7 +10,7 @@ PRINT_UNUSED_ASSETS = False
 PRINT_DELETED_ASSETS = False
 SAFE_EXTENSIONS = {".asmdef", ".dll", ".csproj", ".json", ".shader", ".cginc", ".hlsl"}
 SAFE_FILES = {"manifest.json", "package.json"}
-SAFE_DIRS = {"ProjectSettings", "Packages", ".git", "Scenes"}
+SAFE_DIRS = {"ProjectSettings", "Packages", ".git", "Scenes", "Editor", "BuildReports"}
 #Buildreport and project paths are defined in .env
 #==============================================================================
 
