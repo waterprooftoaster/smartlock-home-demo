@@ -1,15 +1,39 @@
 
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
-
 public class Debloater : EditorWindow
 {
     private static List<string> unusedAssets = new List<string>();
+    private static List<string> usedAssets = new List<string>();
     private static string projectPath = Application.dataPath;
+    static readonly string[] protectedFolders = new[]
+    {
+        // "Assets/Editor",
+        // "Assets/Plugins",
+        // "Assets/Resources",
+        // "Assets/StreamingAssets",
+        // "Assets/Gizmos",
+        // "Assets/Standard Assets",
+        // "Assets/Scenes"
+    };
+
+    static readonly string[] protectedExtensions = new[]
+    {
+        // ".cs",
+        // ".dll",
+        // ".asmdef",
+        // ".asmref",
+        // ".shader",
+        // ".cginc",
+        // ".hlsl",
+        // ".uxml",
+        // ".uss"
+    };
 
     [MenuItem("Tools/Debloater")]
     public static void ShowWindow()
@@ -43,8 +67,19 @@ public class Debloater : EditorWindow
         }
     }
 
+    private bool IsProtected(string path)
+    {
+        if (protectedExtensions.Any(ext => path.EndsWith(ext)))
+            return true;
+
+        if (protectedFolders.Any(folder => path.Replace('\\', '/').StartsWith(folder)))
+            return true;
+
+        return false;
+    }
+
     static void FindUnusedAssets()
-    {   
+    {
         // Clear for refreshability
         unusedAssets.Clear();
 
@@ -52,12 +87,13 @@ public class Debloater : EditorWindow
         string[] sceneAssetPaths = AssetDatabase.FindAssets("t:Scene")
              .Select(AssetDatabase.GUIDToAssetPath)
              .ToArray();
-        HashSet<string> usedAssetPaths =
+        HashSet<string> usedAssetsHash =
         new HashSet<string>(AssetDatabase.GetDependencies(sceneAssetPaths,
                                                           true));
         foreach (string assetPath in sceneAssetPaths)
         {
-            usedAssetPaths.Add(assetPath);
+            usedAssets.Add(assetPath);
+            usedAssetsHash.Add(assetPath);
         }
 
         // Step 2: Get all assets
@@ -71,39 +107,66 @@ public class Debloater : EditorWindow
         // Step 3: Cross Reference and find unused assets
         foreach (string assetPath in allAssetPaths)
         {
-            if (usedAssetPaths.Contains(assetPath))
+            if (usedAssetsHash.Contains(assetPath))
+            {
+                continue;
+            }
+            if (IsProtected(assetPath))
             {
                 continue;
             }
             else
-            {AssetDatabase.Refresh();
+            {
                 unusedAssets.Add(assetPath);
             }
         }
+        AssetDatabase.Refresh();
     }
 
     static void ExportAsTxt()
     {
-        
+        // Define Target Path
+        string targetDir = Path.Combine(Application.dataPath, "Logs");
+        string targetPath = Path.Combine(targetDir, "AssetUsage.txt");
+
+        if (!Directory.Exists(targetDir))
+        {
+            Directory.CreateDirectory(targetDir);
+        }
+
+        // Write the .txt
+        using (StreamWriter writer = new StreamWriter(targetPath, false))
+        {
+            foreach (string path in usedAssets)
+            {
+                writer.WriteLine(path);
+            }
+
+            foreach (string path in unusedAssets)
+            {
+                writer.WriteLine(path);
+            }
+        }
+        Console.WriteLine($"File written to: {targetPath}");
     }
 
     static void MoveUnusedAssets()
     {
-        string unusedDir = Path.Combine(projectPath, "Assets/unusedAssets");
-        if (!Directory.Exists(unusedDir))
+        string targetDir = Path.Combine(projectPath, "Assets/unusedAssets");
+        if (!Directory.Exists(targetDir))
         {
-            Directory.CreateDirectory(unusedDir);
+            Directory.CreateDirectory(targetDir);
         }
 
         foreach (string assetPath in unusedAssets)
         {
-            // string destPath = Path.Combine(unusedDir, Path.GetFileName(assetPath));
+            // string destPath = Path.Combine(targetDir, Path.GetFileName(assetPath));
             AssetDatabase.MoveAsset(assetPath, "Assets/unusedAssets");
         }
         Debug.Log
-        ($"Exported {unusedAssets.Count} unused assets to {unusedDir}");
+        ($"Exported {unusedAssets.Count} unused assets to {targetDir}");
         Debug.Log
-        ($"Note: Delete Unused Asset now will not work, simply delete {unusedDir} instead");
+        ($"Note: Delete Unused Asset now will not work, simply delete {targetDir} instead");
         AssetDatabase.Refresh();
     }
 
@@ -115,7 +178,7 @@ public class Debloater : EditorWindow
         }
         AssetDatabase.Refresh();
     }
-    
+
     static void PrintOnConsole()
     {
         foreach (string asset in unusedAssets)
@@ -123,5 +186,4 @@ public class Debloater : EditorWindow
             Debug.Log($"{asset}");
         }
     }
-    
 }
